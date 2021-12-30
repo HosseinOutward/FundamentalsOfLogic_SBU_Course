@@ -1,6 +1,7 @@
 /*map-info
---has to have exactly one entry to mapSize and startPoint
---values can be anything
+--can have more than one entry to mapSize and startPoint
+--values must be positive and above zero
+--can only have one of each hazard type. ex.: CAN'T have deathTile(jews,1,1) and deathTile(jews,3,5)
 --can have more than one gold spoot*/
 mapSize(4,4).
 startPoint(1,1).
@@ -9,55 +10,64 @@ deathTile(monster,1,3).
 gold(4,4).
 
 /*check if there is an assured path from start point to the gold*/
-start :- startPoint(I,J), inMap(I,J), not(dead(I,J)), safeStepFrom(I,J,[[I,J]],[[I,J]],[[],[],[]]).
-
-/*rules for getting adjacend tiles*/
-aroundList(I,J,[[I,A],[B,J],[C,J],[I,D]]) :- A is J+1, B is I+1, C is I-1, D is J-1.
-around(I, J, X, Y) :- aroundList(I,J,L), member([X,Y],L).
+start :- startPoint(I,J), inMap(I,J), not(deathTile(T,I,J)), safeStepFrom(I,J,[[I,J]],[[I,J]],[[],[],[]]).
 
 /*check if in map*/
 inMap(I,J) :- mapSize(M,N), I < M+1, J < N+1, I > 0, J > 0.
 
+/*hazardous Tile*/
+danger(I,J,DeathType) :- around(I,J,X,Y), inMap(X,Y), deathTile(DeathType,X,Y).
+
+/*rules for getting adjacend tiles*/
+around(I, J, X, Y) :- aroundList(I,J,L), member([X,Y],L).
+aroundList(I,J,[[I,A],[B,J],[C,I],[J,D]]) :- A is J+1, B is I+1, C is I-1, D is J-1.
+
 /*rule to add or remove adjacend tiles from lists*/
-removeAroundTile(I,J,List,NewL) :- aroundList(I,J,L), remove(L,List,TempL).
+removeAroundTile(I,J,List,NewL) :- aroundList(I,J,L), remove(L,List,NewL).
 addAroundTile(I,J,List,NewL) :- aroundList(I,J,L), append(L,List,NewL).
 
-/*hazardous Tile*/
-mapHazard(Death,I,J) :- around(I,J,X,Y), inMap(X,Y), deathTile(Death,X,Y).
-danger(I,J) :- mapHazard(Hazard,I,J).
-dead(I,J) :- deathTile(T,I,J).
-
 /*rule to change guess_lists*/
-editGuessLists(I,J,SafeList,[All,Monster,Hole],[NewAll,NewM,NewH]) :- addAroundTile(I,J,All,TempAll), remove(SafeList, TempAll, NewAll), changeGuessList(I,J,monster,SafeList,Monster,NewM), changeGuessList(I,J,hole,SafeList,Hole,NewH).
-changeGuessList(I,J,Hazard,SafeList,List,NewL) :- mapHazard(Hazard,I,J), List=[],  addAroundTile(I,J,List,TempL), remove(SafeList, TempL, NewL);
-																									mapHazard(Hazard,I,J), aroundList(I,J,TempL), inter(TempL,List,NewL);
-																									not(mapHazard(Hazard,I,J)),NewL=List.
-guessListMember([X,Y],[All,Monster,Hole]) :- not(member([X,Y],Monster)),not(member([X,Y],Hole)).
+updateHazardLists(I,J,DeathType,SafeList,DeathList,NewSL,NewDL) :- member([DeathType|DeathTiles], DeathList), hasOneItem(DeathTiles), append([],SafeList,NewSL), append([],DeathList,NewDL);
+																																	 member([DeathType|DeathTiles], DeathList), remove([[DeathType|DeathTiles]],DeathList,TempDL), addAroundTile(I,J,[],TempDT), remove(SafeList,TempDT,TempDT2),
+																																	 										inter(TempDT2,DeathTiles,NewDT), append([DeathType],NewDT,NewDID), add(NewDID, TempDL, NewDL),addAroundTile(I,J,[],TempL),
+									 																																	 	append(DeathTiles,TempL,TempSL1), remove(NewDT,TempSL1,TempSL2), append(TempSL2, SafeList, NewSL);
+																																	 addAroundTile(I,J,[],TempDT), remove(SafeList,TempDT,NewDT), append([DeathType],NewDT,NewDL), append([],SafeList,NewSL).
 
-/*tile containing gold*/
+/*path checking*/
 safeStepFrom(I,J,[_|Path],Irrelevent1,Irrelevent2) :- gold(I,J), inMap(I,J), write("path taken: " + [[I,J]|Path]).
-
-/*path checking (can be upgraded to have more holes and monsters)*/
-safeStepFrom(I,J,HistoryList,SafeList,GuessDeath) :-
+safeStepFrom(I,J,PathTaken,SafeList,DeathList) :-
 																						%if we landed on a hazardus tile
-																						danger(I,J), editGuessLists(I,J,SafeList,GuessDeath,NewGD), around(I,J,X,Y), inMap(X,Y), guessListMember([X,Y],NewGD), safeStepFrom(X,Y,[[X,Y]|HistoryList],[[X,Y]|SafeList],NewGD);
+																						danger(I,J,DT), updateHazardLists(I,J,DT,SafeList,DeathList,NewSL,NewDL), addAroundTile(I,J,[],Around), inter(Around,NewSL,SafeAround),
+																															 random_member([X,Y],SafeAround), inMap(X,Y), safeStepFrom(X,Y,[[X,Y]|PathTaken],[[X,Y]|NewSL],NewDL);
 																						%if we landed on a normal tile
-																						not(danger(I,J)), addAroundTile(I,J,SafeList,NewSL), around(I,J,X,Y), inMap(X,Y), not(member([X,Y],HistoryList)), safeStepFrom(X,Y,[[X,Y]|HistoryList],[[X,Y]|NewSL],NewGD).
+																						addAroundTile(I,J,SafeList,NewSL), around(I,J,X,Y), inMap(X,Y), not(member([X,Y],PathTaken)), safeStepFrom(X,Y,[[X,Y]|PathTaken],[[X,Y]|NewSL],DeathList).
+																						%if no other path found
+																						idk.
 
 /*Tools*/
+   %check if somthing is in List
 member(X, [X|_]).
 member(X, [_|T]):- member(X, T).
 
+   %removes element of TargetsList from another list. i/o: remove(list of what to remove, the list to remove from, edited list)
 remove(_, [], []).
 remove(TargetsList, [X|Tail], Result):- member(X, TargetsList), !, remove(TargetsList, Tail, Result).
 remove(TargetsList, [X|Tail], [X|Result]):- remove(TargetsList, Tail, Result).
 
+   %adds x to list (wont check for dublicates)
 add(X,[],[X]).
 add(X,[H|T],[H|L]) :- add(X,T,L).
 
+   %appends to lists(removes dublicates)
 append([],L,L).
 append([H|T],L2,[H|L3])  :-  append(T,L2,L3).
 
+   %intersection of 2 lists
 inter([], _, []).
 inter([H1|T1], L2, [H1|Res]) :- member(H1, L2),inter(T1, L2, Res).
 inter([_|T1], L2, Res) :- inter(T1, L2, Res).
+
+	%see if list is empty
+hasOneItem([X|[]]).
+
+random_member(X, List) :- must_be(list, List), length(List, Len), Len > 0, N is random(Len), nth0(N, List, X).
