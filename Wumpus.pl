@@ -1,32 +1,61 @@
-/*map-info (has to have exactly one entry to mapSize and startPoint) (positions begine from 0)*/
+/*map-info
+--has to have exactly one entry to mapSize and startPoint
+--values can be anything
+--can have more than one gold spoot*/
 mapSize(4,4).
 startPoint(1,1).
-hole(1,4).
-monster(4,2).
+deathTile(hole,4,2).
+deathTile(monster,4,2).
 gold(4,4).
 
-/*to check if X is part of a list*/
+/*Rule to check all adjacent tiles*/
+aroundList(I,J,[[A,J],[B,J],[I,C],[I,D]]) :- A is I+1, B is I-1, C is J+1, D is J-1.
+around(I, J, X, Y) :- aroundList(I,J,L), member([X,Y],L).
+
+/*check if in map*/
+inMap(I,J) :- mapSize(M,N), I < M+1, J < N+1, I > 0, J > 0.
+
+/*Rule to add srounding tiles to guess-lists*/
+removeAroundTile(I,J,List,NewL) :- aroundList(I,J,L), remove(L,List,TempL).
+addAroundTile(I,J,List,NewL) :- aroundList(I,J,L), append(L,List,NewL).
+
+/*hazardous Tile*/
+mapHazard(Death,I,J) :- around(I,J,X,Y), inMap(X,Y), deathTile(Death,X,Y).
+
+/*collecting hazards catalog*/
+danger(Hazard,I,J) :- mapHazard(Hazard,I,J).
+dead(I,J) :- deathTile(T,I,J).
+
+/*Targets*/
+safeStepFrom(I,J,[_|Path],Irrelevent1,Irrelevent2) :- gold(I,J), inMap(I,J), write("path taken: " + [[I,J]|Path]).
+
+/*path checking (can be upgraded to have more holes and monsters)*/
+safeStepFrom(I,J,HistoryList,SafeList,GuessDeath) :-
+																						%if we landed on a hazardus tile
+																						danger(Hazard,I,J), addAroundTile(I,J,GuessDeath,TempGD), remove(SafeList, TempGD, NewGD), around(I,J,X,Y), inMap(X,Y), not(member([X,Y],NewGD)), safeStepFrom(X,Y,[[X,Y]|HistoryList],[[X,Y]|SafeList],NewGD);
+																						%if we landed on a normal tile
+																						not(danger(Hazard,I,J)), addAroundTile(I,J,SafeList,NewSL), around(I,J,X,Y), inMap(X,Y), not(member([X,Y],HistoryList)), safeStepFrom(X,Y,[[X,Y]|HistoryList],[[X,Y]|NewSL],NewGD).
+
+/*check if there is an assured path from start point to the gold*/
+start :- startPoint(I,J), inMap(I,J), not(dead(I,J)), safeStepFrom(I,J,[[I,J]],[[I,J]],[]).
+
+/*Tools*/
 member(X, [X|_]).
 member(X, [_|T]):- member(X, T).
 
-/*fuction to check all adjcened tiles*/
-around(X1, Y1, X2, Y2):- X2 is X1, Y2 is Y1-1;
-												 X2 is X1, Y2 is Y1+1;
-												 Y2 is Y1, X2 is X1-1;
-												 Y2 is Y1, X2 is X1+1.
+remove(_, [], []).
+remove(TargetsList, [X|Tail], Result):- member(X, TargetsList), !, remove(TargetsList, Tail, Result).
+remove(TargetsList, [X|Tail], [X|Result]):- remove(TargetsList, Tail, Result).
 
-/*check if in map (can be expanded)*/
-inMap(X,Y) :- mapSize(T,R), X < T+1, Y < R+1, X > 0, Y > 0.
+add(X,[],[X]).
+add(X,[H|T],[H|L]) :- add(X,T,L).
 
-/*designating map hazardes*/
-map(breezy,I,J) :- around(I,J,X,Y), hole(X,Y).
-map(stench,I,J) :- around(I,J,X,Y), monster(X,Y).
+append([],L,L).
+append([H|T],L2,[H|L3])  :-  append(T,L2,L3).
 
-/*starting point initilization*/
-safeAccess(Irrelevent,I,J) :- startPoint(I,J), inMap(I,J), not(monster(I,J)), not(hole(I,J)).
+inter([], _, []).
+inter([], _, [])
+inter([H1|T1], L2, [H1|Res]) :- member(H1, L2),inter(T1, L2, Res).
+inter([_|T1], L2, Res) :- inter(T1, L2, Res).
 
-/*path checking*/
-safeAccess(HistoryList,I,J) :- inMap(I,J), around(I,J,X,Y), not(member([X,Y],HistoryList)), not(map(breezy,X,Y)), not(map(stench,X,Y)), safeAccess([[I,J]|HistoryList],X,Y).
-
-/*check if there is a assured path from start point to the gold*/
-safeWin :- gold(X,Y), safeAccess([],X,Y).
+add_number(X,A,R) :- R is X+A.
